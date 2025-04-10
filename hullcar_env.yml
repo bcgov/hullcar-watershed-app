@@ -1,0 +1,13 @@
+name: hullcar_env
+channels:
+    - esri
+    - anaconda
+    - defaults
+dependencies:
+    - python=3.11
+    - arcgis
+    - requests
+    - pandas
+    - geopandas
+    - pytz
+    - numpy

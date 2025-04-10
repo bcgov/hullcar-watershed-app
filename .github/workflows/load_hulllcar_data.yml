@@ -1,0 +1,48 @@
+name: Load EMS Data to AGO
+
+on:
+  schedule:
+    - cron: 0 0 * * 0
+  workflow_dispatch:
+
+jobs:
+  run-scripts: 
+    if: github.repository == 'bcgov/hullcar-watershed-app' # ensures the original workflow is run and not the forks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      shell: bash
+      run: |
+        conda env update --file hullcar_env.yml --name hullcar_env
+        conda env list
+        conda init bash
+        . ~/.bashrc
+        conda activate hullcar_env
+
+    - name: Run Script
+      shell: bash
+      env:
+        CKAN_API_URL: ${{  secrets.CKAN_API_URL  }}
+        URL: ${{  secrets.MAPHUB_URL  }}
+        USERNAME: ${{  secrets.GSS_ES_AGO_USERNAME  }}
+        PASSWORD: ${{  secrets.GSS_ES_AGO_PASSWORD  }}
+        HULLCAR_ITEM_ID: ${{  secrets.HULLCAR_ITEM_ID  }}
+        HULLCAR_GROUP_ID: ${{  secrets.HULLCAR_GROUP_ID  }}
+
+      run: |
+        conda init bash
+        . ~/.bashrc
+        conda activate hullcar_env
+        python3 scripts/upload_ems_data_to_ago.py
+
+
+    
+
+
