@@ -20,7 +20,7 @@ Online web map.
 
 [![img](https://img.shields.io/badge/Lifecycle-Experimental-339999)](https://github.com/bcgov/repomountie/blob/master/doc/lifecycle-badges.md)
 
-[Hullcar Aquifer Public Information  Page](https://www2.gov.bc.ca/gov/content/environment/air-land-water/site-permitting-compliance/hullcar-aquifer): The current information page availabel to the public. The ArcGIS Online application will supplement the information
+[Hullcar Aquifer Public Information  Page](https://www2.gov.bc.ca/gov/content/environment/air-land-water/site-permitting-compliance/hullcar-aquifer): The current information page available to the public. The ArcGIS Online application will supplement the information
 here.
 
 ## Contributing
