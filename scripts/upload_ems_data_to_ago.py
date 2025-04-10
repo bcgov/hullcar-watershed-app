@@ -293,7 +293,7 @@ def main():
         logging.info("Checking for new data")
         diff = check_for_data_updates(df_current=df_current_filter, ago_sdf=ago_ems_sdf, sort_column='COLLECTION_END')
 
-        if diff == True:
+        if diff == False:
             logging.info("No new EMS submissions. Exiting script.")
             sys.exit()
 
