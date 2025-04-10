@@ -22,5 +22,3 @@
 - git pull
 - git branch -d <new-branch-name>   
 - git remote prune origin            
-
-
