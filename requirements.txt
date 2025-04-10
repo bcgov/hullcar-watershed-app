@@ -1,0 +1,6 @@
+requests
+pandas
+geopandas==0.14.2
+arcgis==2.4.0
+pytz
+numpy
