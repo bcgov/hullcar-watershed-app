@@ -35,40 +35,6 @@ jobs:
         run: |
           python3 scripts/upload_ems_data_to_ago.py
 
-    # steps:
-    # - name: Checkout code
-    #   uses: actions/checkout@v2
-
-    # - uses: actions/setup-python@v4
-    #   with:
-    #     python-version: '3.11'
-    
-    # - name: Install dependencies
-    #   shell: bash
-    #   run: |
-    #     conda env update --file hullcar_env.yml --name hullcar_env
-    #     conda env list
-    #     conda init bash
-    #     . ~/.bashrc
-    #     conda activate hullcar_env
-
-    # - name: Run Script
-    #   shell: bash
-    #   env:
-    #     CKAN_API_URL: 
-    #     URL: 
-    #     USERNAME: 
-    #     PASSWORD: 
-    #     HULLCAR_ITEM_ID: 
-    #     HULLCAR_GROUP_ID: 
-
-    #   run: |
-    #     conda init bash
-    #     . ~/.bashrc
-    #     conda activate hullcar_env
-    #     python3 scripts/upload_ems_data_to_ago.py
-
-
     
 
 
