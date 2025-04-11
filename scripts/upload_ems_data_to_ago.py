@@ -32,7 +32,7 @@ import numpy as np
 import os
 
 # CKAN API URL
-CKAN_API_URL = 'https://catalogue.data.gov.bc.ca/api/3/action/resource_show'
+CKAN_API_URL = os.getenv('CKAN_API_URL')
 
 # Resource ID for the dataset (BC Environmental Monitoring System Results)
 RESOURCE_ID_CURRENT = "6aa7f376-a4d3-4fb4-a51c-b4487600d516"      # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_current_expanded.csv
@@ -47,7 +47,7 @@ URL = os.getenv('MAPHUB_URL')
 USERNAME = os.getenv('AGO_USERNAME')
 PASSWORD = os.getenv('AGO_PASSWORD')
 
-AGO_ITEM_ID = '6cb28330305f49fcbc7e81e38f8dccfa'
+AGO_ITEM_ID = os.getenv('HULLCAR_ITEM_ID')
 
 now_utc = datetime.now(timezone.utc)
 now = now_utc.strftime('%Y-%m-%d %I:%M:%S %p')
