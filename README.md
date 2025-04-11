@@ -41,9 +41,8 @@ Variables > Actions**
 | `CKAN_API_URL`         | URL for the CKAN instance used for the BC Data Catalogue.                   |
 | `GSS_ES_AGO_USERNAME`  | ArcGIS Online username for uploading or managing feature layers.            |
 | `GSS_ES_AGO_PASSWORD`  | ArcGIS Online password associated with the username.                        |
-| `HULLCAR_GROUP_ID`     | AGOL Group ID used to organize and share the web app and data layers.       |
-| `HULLCAR_ITEM_ID`      | ArcGIS Online Item ID for the Hullcar Aquifer hosted feature layer.    |
-| `MAPHUB_URL`           | URL endpoint for accessing MapHub and related services.                      |
+| `HULLCAR_ITEM_ID`      | ArcGIS Online Item ID for the Hullcar Aquifer hosted feature layer.         |
+| `MAPHUB_URL`           | URL endpoint for accessing MapHub and related services.                     |
 
 
 ## License
