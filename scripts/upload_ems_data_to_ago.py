@@ -4,18 +4,19 @@
 # Purpose:     This script streamlines the Hullcar Aquifer EMS data processing pipeline by:
 #                 (1) Connect to ArcGIS Online (AGO): Establishes a connection to AGO using provided credentials.
 #                 (2) Retrieve EMS Data: Fetches EMS sampling data from AGO.
-#                 (3) Retrieve CSV URLs: Fetches the direct CSV download URLs for current and historic EMS data from the BC Data Catalog.
+#                 (3) Retrieve CSV URLs: Fetches the direct CSV download URLs for current EMS data from the BC Data Catalog.
 #                 (4) Load and Filter Data: Loads the EMS data from the CSV URLs into Pandas DataFrames and filters for specific monitoring locations.
 #                 (5) Check for Data Updates: Compares the most recent records from the BC Data Catalog and AGO to check for differences.
-#                 (6) Create Master Dataset: Combines current and historic EMS data into a master dataset.
-#                 (7) Convert to GeoJSON: Converts the master dataset to GeoJSON format.
-#                 (8) Upload to AGO: Uploads the GeoJSON data to AGO and updates the feature layer.
+#                 (6) Convert to dict: Converts the master dataset to dict for upload to AGOL.
+#                 (7) Upload to AGO: Appends any new records to AGOL feature layer.
 #              
-# Input(s):    (1) AGO credentials.                
+# Input(s):    (1) AGO credentials
+#              (2) CKAN API URL              
 #
 # Author:      Emma Armitage - GeoBC
 #
 # Created:     2025-02-24
+# Updated:     2025-04-11
 # Updates ongoing - see GitHub for details.
 #-------------------------------------------------------------------------------
 
@@ -24,69 +25,79 @@ import pandas as pd
 import geopandas as gpd
 from arcgis import GIS
 import pytz
-from datetime import datetime
-import json
+from datetime import datetime, timezone
 import logging
-from io import BytesIO, StringIO
 import sys
 import numpy as np
 import os
 
 # CKAN API URL
-CKAN_API_URL = os.getenv('CKAN_API_URL')
+CKAN_API_URL = 'https://catalogue.data.gov.bc.ca/api/3/action/resource_show'
 
 # Resource ID for the dataset (BC Environmental Monitoring System Results)
 RESOURCE_ID_CURRENT = "6aa7f376-a4d3-4fb4-a51c-b4487600d516"      # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_current_expanded.csv
-RESOURCE_ID_HISTORIC = '32cc8da0-51ff-4235-9636-f84970e76fa3'      # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
+RESOURCE_ID_HISTORIC = '32cc8da0-51ff-4235-9636-f84970e76fa3'     # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
 
 MONITORING_LOCATION_IDS = ['E333852', 'E333952', 'E333959', 'E301112', 'E206908', 'E319193', 'E317974', 'E317972', 'E319192', 'E317950', 'E319191']
 EMS_DATE_COLUMNS = ['COLLECTION_START', 'COLLECTION_END']
+MERGE_COLS = ['EMS_ID', 'COLLECTION_END', 'PARAMETER_CODE', 'RESULT']
+DROP_COLS = ['_merge', 'OBJECTID', 'SHAPE']
 
 URL = os.getenv('MAPHUB_URL')
-USERNAME = os.getenv('USERNAME')
-PASSWORD = os.getenv('PASSWORD')
+USERNAME = os.getenv('AGO_USERNAME')
+PASSWORD = os.getenv('AGO_PASSWORD')
 
-AGO_ITEM_ID = os.getenv('HULLCAR_ITEM_ID')
-AGO_ITEM_TITLE = 'Hullcar_EMS_Data'
-AGO_FOLDER = 'Hullcar Aquifer'
-AGO_GROUP_ID = os.getenv('HULLCAR_GROUP_ID')
+AGO_ITEM_ID = '6cb28330305f49fcbc7e81e38f8dccfa'
 
-now = datetime.today().strftime('%Y-%m-%d %I:%M:%S %p')
+now_utc = datetime.now(timezone.utc)
+now = now_utc.strftime('%Y-%m-%d %I:%M:%S %p')
+
+def standardize_date_format(df, date_columns, localize_target, target_timezone):
+    """ Standardize date columns to a consistent timezone and format """
+
+    for col in date_columns:
+        # convert to datetime
+        df[col] = pd.to_datetime(df[col], format='%Y%m%d%H%M%S', errors='coerce')
+
+        # localize naive datetimes
+        if df[col].dt.tz is None:
+            df[col] = df[col].dt.tz_localize(localize_target)
+        else:
+            df[col] = df[col].dt.tz_convert('UTC')
+
+       # ensure datetime64[ns] precision
+        df[col] = df[col].astype('datetime64[ns, UTC]')
+
+        # convert to target timezone
+        if target_timezone != 'UTC':
+            df[col] = df[col].dt.tz_convert(target_timezone)
+
+    return df
 
 def connect_to_ago(URL, USERNAME, PASSWORD):
     """ Returns AGO GIS Connection """
     gis = GIS(url=URL, username=USERNAME, password=PASSWORD)
-    logging.info(f"..successfully connect to AGOL as {gis.users.me.username}")
+    logging.info(f"..successfully connected to AGOL as {gis.users.me.username}")
 
     return gis
 
-def get_ago_data(gis, ago_item_id, date_columns):
+def get_ago_data(gis, ago_item_id, date_columns, query):
     """ Returns AGO sampling data """
 
     ago_item = gis.content.get(ago_item_id)
     ago_flayer = ago_item.layers[0]
-    ago_fset = ago_flayer.query()
+    ago_fset = ago_flayer.query(where=query)
     ems_sdf = ago_fset.sdf
-    logging.info("..retrived EMS sampling data from AGO")
+    logging.info("..retrieved EMS sampling data from AGO")
 
-    pacific_timezone = pytz.timezone('America/Vancouver')
+    # convert date columns to datetime, ensuring correct timezone
+    ems_sdf = standardize_date_format(ems_sdf, date_columns, localize_target='UTC', target_timezone='UTC')
 
-    # Convert date columns to datetime, ensuring they are timezone aware
-    for col in date_columns:
-        ems_sdf[col] = pd.to_datetime(ems_sdf[col], format='%Y-%m-%d %I:%M:%S %p', errors='coerce')
-
-        # Localize to UTC first if they are naive
-        if ems_sdf[col].dt.tz is None:
-            ems_sdf[col] = ems_sdf[col].dt.tz_localize('UTC')
-
-        # convert the time to Pacific Time
-        ems_sdf[col] = ems_sdf[col].dt.tz_convert(pacific_timezone)
-        
     # Fill NaN and NaT values
     ems_sdf = ems_sdf.fillna(np.nan).replace([np.nan], [None])
     logging.info("..cleaned dataframe datetimes and NaN values")
 
-    return ems_sdf
+    return ems_sdf, ago_flayer
 
 def get_csv_url(resource_id):
     """Fetch the direct CSV download URL from CKAN API."""
@@ -117,25 +128,6 @@ def load_csv_to_dataframe(csv_url, chunk_size=None):
     else:
         logging.info("..loading full CSV")
         return pd.read_csv(csv_url)
-    
-def check_for_data_updates(df_current, ago_sdf, sort_column):
-    """ Compare the most recent record from BCDC and AGO data to check for differences """
-
-    diff = False
-
-    df_current.sort_values(by=sort_column, axis=0, ascending=False, inplace=True)
-    ago_sdf.sort_values(by=sort_column, axis=0, ascending=False, inplace=True)
-
-    most_recent_bcdc_record = df_current[sort_column].iloc[0]
-    most_recent_ago_record = ago_sdf[sort_column].iloc[0]
-
-    if most_recent_bcdc_record != most_recent_ago_record:
-        diff = True
-        logging.info("..differences found between AGOL and BCDC data")
-    else:
-        logging.info("..no new data found in BC Data Catalog")  
-
-    return diff
 
 # function to filter for specific well sampling sites
 def filter_ems_sites(df, ems_ids, date_columns):
@@ -146,11 +138,8 @@ def filter_ems_sites(df, ems_ids, date_columns):
     # define pacific timezone
     pacific_timezone = pytz.timezone('America/Vancouver')
 
-    # convert date columns to datetime, ensuring they are timezone aware
-    for col in date_columns:
-        ems_df[col] = pd.to_datetime(ems_df[col], format='%Y%m%d%H%M%S', errors='coerce').dt.tz_localize(pacific_timezone, 
-                                                                                  ambiguous='NaT',
-                                                                                  nonexistent='shift_forward')
+    # convert date columns to datetime, ensuring correct timezone
+    ems_df = standardize_date_format(ems_df, date_columns, localize_target=pacific_timezone, target_timezone='UTC')
         
     # Fill NaN and NaT values
     ems_df = ems_df.fillna(np.nan).replace([np.nan], [None])
@@ -158,127 +147,116 @@ def filter_ems_sites(df, ems_ids, date_columns):
     logging.info("..filtered EMS data to sites of interest")
 
     return ems_df
+
+def compare_dataframes(ems_df, ago_ems_sdf, merge_cols):
+    """ Finds new records in EMS BCDC data that are not yet loaded to AGOL """
+
+    diff = False
+
+    # Convert datetime columns to naive for merging (if required)
+    ems_df['COLLECTION_END'] = ems_df['COLLECTION_END'].dt.tz_localize(None)
+    ago_ems_sdf['COLLECTION_END'] = ago_ems_sdf['COLLECTION_END'].dt.tz_localize(None)
+        
+    # convert ems_id to string, strip whitespace and convert to uppercase
+    ems_df['EMS_ID'] = ems_df['EMS_ID'].astype(str).str.strip().str.upper()
+    ago_ems_sdf['EMS_ID'] = ago_ems_sdf['EMS_ID'].astype(str).str.strip().str.upper()    
+
+    # convert parameter_code to string, strip whitespace and convert to uppercase
+    ems_df['PARAMETER_CODE'] = ems_df['PARAMETER_CODE'].astype(str).str.strip().str.upper()
+    ago_ems_sdf['PARAMETER_CODE'] = ago_ems_sdf['PARAMETER_CODE'].astype(str).str.strip().str.upper()
+
+    # convert result to float
+    ems_df['RESULT'] = ems_df['RESULT'].astype(float).round(6)
+    ago_ems_sdf['RESULT'] = ago_ems_sdf['RESULT'].astype(float).round(6)
+
+    df_merge = pd.merge(left=ems_df, right=ago_ems_sdf, how='outer', indicator=True, on=merge_cols)
+    new_ems_records = df_merge[df_merge['_merge'] != 'both']
+
+    if len(new_ems_records) > 0:
+        diff = True
+        logging.info(f"..{len(new_ems_records)} new records found in BCDC EMS data")
     
-def create_master_df(df_historic, df_current, load_col_name, today):
-    """ Combines current and historic dfs into one dataframe """
+    return diff, new_ems_records
 
-    df = pd.concat([df_historic, df_current], axis=0)
+def drop_duplicate_columns(new_ems_records, drop_cols, date_columns):
+    """ Removes duplicated columns from the merged dataframe """
 
-    # add GIS_LOAD_DATE column
-    df[load_col_name] = today
-
-    logging.info("..successfully combined dataframes")
-
-    return df
-
-def gdf_to_geojson(gdf):
-    """
-    Converts geodataframe to geojson format for upload to AGOL
-    """
-
-    features = []
-    for _, row in gdf.iterrows():
-        feature = {
-            "type": "Feature",
-            "properties": {},
-            "geometry": row['geometry'].__geo_interface__
-        }
-        for column, value in row.items():
-            if column != 'geometry':
-                if isinstance(value, (datetime, pd.Timestamp)):
-                    feature['properties'][column] = value.isoformat() if not pd.isna(value) else ''
-                else:
-                    feature['properties'][column] = value
-        features.append(feature)
+    for col in new_ems_records.columns:
+        if col.endswith('_x'):
+            new_col_name = col[:-2]
+            new_ems_records.rename(columns={col: new_col_name}, inplace=True)
+        if col.endswith('_y') or col in drop_cols: 
+            new_ems_records.drop(columns=[col], inplace=True)
     
-    geojson_dict = {
-        "type": "FeatureCollection",
-        "features": features
-    }
+    return new_ems_records
 
-    logging.info("..converted geodataframe to geojson format")
+def convert_ems_to_geojson(ems_df, today):
+    """ Converts the pandas dataframe to geodataframe then dictionary for upload to AGOL """
 
-    return geojson_dict
-
-# function to convert to geodataframe
-def convert_ems_to_geojson(ems_df):
-    """ Converts the pandas dataframe to geodataframe then geojson """
-    gdf = gpd.GeoDataFrame(ems_df, geometry=gpd.points_from_xy(ems_df.LONGITUDE, ems_df.LATITUDE), crs="EPSG:4326")
+    gdf = gpd.GeoDataFrame(ems_df.copy(), 
+                           geometry=gpd.points_from_xy(ems_df.LONGITUDE, ems_df.LATITUDE), 
+                           crs="EPSG:4326")
     logging.info("..successfully converted to geodataframe")
 
-    # Convert GeoDataFrame to GeoJSON
-    geojson_dict = gdf_to_geojson(gdf)  
+    new_features = []
 
-    return geojson_dict
+    for idx, row in gdf.iterrows():
+        # Convert to plain dictionary (removes references to the parent DataFrame)
+        row_dict = row.to_dict()
 
-def upload_to_ago(gis, geojson_dict, title, folder, group):
-    """ Uploads the geojson to AGOL """
+        geom = row_dict.pop("geometry", None)
+        attributes = {}
 
-    try: 
-        # Search for existing items (including the GeoJSON file and feature layer)
-        existing_items = gis.content.search(f"(title:{title} OR title:data.geojson) AND owner:{gis.users.me.username}")
+        for col, val in row_dict.items():
+            if isinstance(val, (datetime, pd.Timestamp)):
+                attributes[col] = val.isoformat()
+            else:
+                attributes[col] = val
 
-        # Delete the existing GeoJSON file
-        for item in existing_items:
-            if item.type == 'GeoJson':
-                item.delete(force=True, permanent=True)
-                logging.info(f"..existing GeoJSON item '{item.title}' permanently deleted.")
+        # Set GIS_LOAD_DATE to today
+        attributes["GIS_LOAD_DATE"] = today
 
-        # Find the existing feature layer
-        feature_layer_item = None
-        for item in existing_items:
-            if item.type == 'Feature Layer':
-                feature_layer_item = item
-                break
-
-        # Create a new GeoJSON item
-        geojson_item_properties = {
-            'title': title,
-            'type': 'GeoJson',
-            'tags': 'sampling points,geojson',
-            'description': 'EMS water sampling data for sites within the Clchal/Hullcar water monitoring area',
-            'fileName': 'ems_data.geojson'
+        # Create the feature dictionary
+        feature = {
+            "attributes": attributes,
+            "geometry": {
+                "x": geom.x,
+                "y": geom.y
+            } if geom else {}
         }
-        geojson_file = BytesIO(json.dumps(geojson_dict).encode('utf-8'))
-        # new_geojson_item = gis.content.add(item_properties=geojson_item_properties, data=geojson_file, folder=folder)
-        ago_folder = gis.content.folders.get(folder)
-        new_geojson_item = ago_folder.add(item_properties=geojson_item_properties, file=geojson_file).result()
 
-        # Update the existing feature layer or create a new one if it doesn't exist
-        if feature_layer_item:
-            feature_layer_item.update(data=new_geojson_item, folder=folder)
-            logging.info(f"..existing feature layer '{title}' updated successfully.")
+        new_features.append(feature)
 
-            item_grp_sharing_mgr = feature_layer_item.sharing.groups
-            item_grp_sharing_mgr.add(group=group)
-            logging.info(f"..feature layer successfully shared with {group} group.")
+    logging.info("..converted geodataframe to dict format for upload to AGOL")
+
+    return new_features
+
+def upload_to_ago(ago_flayer, new_features):
+    """ Appends the new features to the existing feature layer in AGOL """
+
+    add_result = ago_flayer.edit_features(adds=new_features)
+
+    try:
+        add_results = add_result.get('addResults', [])
+        if all(res.get('success') for res in add_results):
+            logging.info(f"..{len(new_features)} new features added to AGOL feature layer")
         else:
-            published_item = new_geojson_item.publish(overwrite=True)
-            logging.info(f"..new feature layer '{title}' published successfully.")
-
-            item_grp_sharing_mgr = published_item.sharing.groups
-            item_grp_sharing_mgr.add(group=group)
-            logging.info(f"..feature layer successfully shared with {group} group.")
-            return published_item
-
+            logging.error("..some features failed to add to AGOL.")
+            logging.error(f"..full add_result: {add_result}")
     except Exception as e:
-        error_message = f"..error publishing/updating feature layer: {str(e)}"
-        raise RuntimeError(error_message)
+        logging.exception(f"..unexpected error while processing add_result: {e}")
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(message)s')
+    SORT_COLUMN = 'COLLECTION_END'
 
     logging.info("Connecting to AGOL")
     gis = connect_to_ago(URL, USERNAME, PASSWORD)
 
-    logging.info("Getting EMS data from AGOL")
-    ago_ems_sdf = get_ago_data(gis=gis, ago_item_id=AGO_ITEM_ID, date_columns=EMS_DATE_COLUMNS)
-
     logging.info("Getting EMS csv url from the BC Data Catalog")
     csv_url_current = get_csv_url(RESOURCE_ID_CURRENT)
-    csv_url_historic = get_csv_url(RESOURCE_ID_HISTORIC)
     
-    if csv_url_current and csv_url_historic:
+    if csv_url_current:
 
         chunk_size = 10000  # Set to an integer (e.g., 10000) for chunked loading
 
@@ -287,33 +265,35 @@ def main():
         df_current = load_csv_to_dataframe(csv_url_current, chunk_size)
 
         logging.info("Filtering current EMS data to points of interest")
-        df_current_filter = filter_ems_sites(df_current, ems_ids=MONITORING_LOCATION_IDS, date_columns=EMS_DATE_COLUMNS)
+        ems_df = filter_ems_sites(df_current, ems_ids=MONITORING_LOCATION_IDS, date_columns=EMS_DATE_COLUMNS)
 
-        # check for data updates by comparing the most recent record
+        logging.info("Finding EMS start and end dates")
+        start_date = ems_df[SORT_COLUMN].min()
+        # format start date to 'YYYY-MM-DD' for AGOL query
+        start_date = start_date.strftime('%Y-%m-%d')
+        query = f""" COLLECTION_END >= DATE '{start_date}' """
+
+        logging.info("Getting EMS data from AGOL")
+        ago_ems_sdf, ago_flayer = get_ago_data(gis=gis, ago_item_id=AGO_ITEM_ID, date_columns=EMS_DATE_COLUMNS, query=query)
+
         logging.info("Checking for new data")
-        diff = check_for_data_updates(df_current=df_current_filter, ago_sdf=ago_ems_sdf, sort_column='COLLECTION_END')
+        diff, new_ems_records = compare_dataframes(ems_df, ago_ems_sdf, merge_cols=MERGE_COLS)
 
         if diff == False:
             logging.info("No new EMS submissions. Exiting script.")
             sys.exit()
 
         else:
-            logging.info("Loading EMS data from BC Data Catalog to pandas dataframe")
-            logging.info("..loading EMS historic data")
-            df_historic = load_csv_to_dataframe(csv_url_historic, chunk_size)
+            logging.info("New EMS data found. Proceeding with data processing.")
 
-            logging.info("Filtering current EMS data to points of interest")
-            df_historic_filter = filter_ems_sites(df_historic, ems_ids=MONITORING_LOCATION_IDS, date_columns=EMS_DATE_COLUMNS)
-            
-            ### remove GIS LOAD DATE - most to concat function
-            logging.info("Creating master dataframe")
-            ems_df = create_master_df(df_historic=df_historic_filter, df_current=df_current_filter, load_col_name='GIS_LOAD_DATE', today=now)         
+            logging.info("Dropping duplicate columns")
+            new_ems_records = drop_duplicate_columns(new_ems_records, drop_cols=DROP_COLS, date_columns=EMS_DATE_COLUMNS)
 
             logging.info("Converting EMS data to spatial format")
-            geosjon_dict = convert_ems_to_geojson(ems_df)
+            new_features_dict = convert_ems_to_geojson(new_ems_records, today=now)
 
-            logging.info("Uploading EMS data to AGOL")
-            upload_to_ago(gis=gis, geojson_dict=geosjon_dict, title=AGO_ITEM_TITLE, folder=AGO_FOLDER, group=AGO_GROUP_ID)   
+            logging.info("Adding new EMS data to AGOL feature layer")
+            upload_to_ago(ago_flayer, new_features_dict)  
 
             logging.info("Script Complete!")                     
 
