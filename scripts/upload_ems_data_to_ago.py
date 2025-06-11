@@ -199,6 +199,11 @@ def calc_monitoring_loc_name(new_ems_records):
     new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = short_name
     logging.info("..calculated MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION")
 
+    if new_ems_records['MONITORING_LOCATION'] == "DEEP C @ HULCAR RD D/S OF CULVERT":
+        new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = "DEEP C @ HULLCAR RD D/S OF CULVERT"
+        new_ems_records['MONITORING_LOCATION'] = "DEEP C @ HULLCAR RD D/S OF CULVERT"
+        logging.info("..corrected MONITORING_LOCATION name from 'DEEP C @ HULCAR RD D/S OF CULVERT' to 'DEEP C @ HULLCAR RD D/S OF CULVERT'")
+
     return new_ems_records
 
 def convert_ems_to_spatial(ems_df, today):
