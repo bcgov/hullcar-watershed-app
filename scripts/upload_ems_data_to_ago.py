@@ -36,12 +36,13 @@ CKAN_API_URL = os.getenv('CKAN_API_URL')
 
 # Resource ID for the dataset (BC Environmental Monitoring System Results)
 RESOURCE_ID_CURRENT = "6aa7f376-a4d3-4fb4-a51c-b4487600d516"      # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_current_expanded.csv
-RESOURCE_ID_HISTORIC = '32cc8da0-51ff-4235-9636-f84970e76fa3'     # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
+RESOURCE_ID_HISTORIC = "32cc8da0-51ff-4235-9636-f84970e76fa3"     # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
 
-MONITORING_LOCATION_IDS = ['E333852', 'E333952', 'E333959', 'E301112', 'E206908', 'E319193', 'E317974', 'E317972', 'E319192', 'E317950', 'E319191']
+MONITORING_LOCATION_IDS = ['E333852', 'E333952', 'E333959', 'E301112', 'E206908', 'E319193', 'E317974', 'E317972', 'E319192', 'E317950', 'E319191', 'E337924']
 EMS_DATE_COLUMNS = ['COLLECTION_START', 'COLLECTION_END']
 MERGE_COLS = ['EMS_ID', 'COLLECTION_END', 'PARAMETER_CODE', 'RESULT']
 DROP_COLS = ['_merge', 'OBJECTID', 'SHAPE']
+SORT_COLUMN = 'COLLECTION_END'
 
 URL = os.getenv('MAPHUB_URL')
 USERNAME = os.getenv('USERNAME')
@@ -190,7 +191,17 @@ def drop_duplicate_columns(new_ems_records, drop_cols, date_columns):
     
     return new_ems_records
 
-def convert_ems_to_geojson(ems_df, today):
+def calc_monitoring_loc_name(new_ems_records):
+    """ Calculates MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION """
+
+    short_name = new_ems_records['MONITORING_LOCATION'].apply(lambda x: x.split(' ')[0] if x.startswith("MW") else x)
+
+    new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = short_name
+    logging.info("..calculated MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION")
+
+    return new_ems_records
+
+def convert_ems_to_spatial(ems_df, today):
     """ Converts the pandas dataframe to geodataframe then dictionary for upload to AGOL """
 
     gdf = gpd.GeoDataFrame(ems_df.copy(), 
@@ -248,7 +259,6 @@ def upload_to_ago(ago_flayer, new_features):
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(message)s')
-    SORT_COLUMN = 'COLLECTION_END'
 
     logging.info("Connecting to AGOL")
     gis = connect_to_ago(URL, USERNAME, PASSWORD)
@@ -289,8 +299,11 @@ def main():
             logging.info("Dropping duplicate columns")
             new_ems_records = drop_duplicate_columns(new_ems_records, drop_cols=DROP_COLS, date_columns=EMS_DATE_COLUMNS)
 
+            logging.info("Creating Monitoring Location Short Name")
+            edited_records = calc_monitoring_loc_name(new_ems_records)
+
             logging.info("Converting EMS data to spatial format")
-            new_features_dict = convert_ems_to_geojson(new_ems_records, today=now)
+            new_features_dict = convert_ems_to_spatial(edited_records, today=now)
 
             logging.info("Adding new EMS data to AGOL feature layer")
             upload_to_ago(ago_flayer, new_features_dict)  
