@@ -36,7 +36,7 @@ CKAN_API_URL = os.getenv('CKAN_API_URL')
 
 # Resource ID for the dataset (BC Environmental Monitoring System Results)
 RESOURCE_ID_CURRENT = "6aa7f376-a4d3-4fb4-a51c-b4487600d516"      # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_current_expanded.csv
-RESOURCE_ID_HISTORIC = '32cc8da0-51ff-4235-9636-f84970e76fa3'     # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
+RESOURCE_ID_HISTORIC = "32cc8da0-51ff-4235-9636-f84970e76fa3"     # https://pub.data.gov.bc.ca/datasets/949f2233-9612-4b06-92a9-903e817da659/ems_sample_results_historic_expanded.csv
 
 MONITORING_LOCATION_IDS = ['E333852', 'E333952', 'E333959', 'E301112', 'E206908', 'E319193', 'E317974', 'E317972', 'E319192', 'E317950', 'E319191']
 EMS_DATE_COLUMNS = ['COLLECTION_START', 'COLLECTION_END']
