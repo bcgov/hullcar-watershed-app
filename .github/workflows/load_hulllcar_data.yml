@@ -1,5 +1,8 @@
 name: Load EMS Data to AGO
 
+permissions:
+  contents: read
+
 on:
   schedule:
     - cron: 0 8 * * 0 # every Sunday at midnight PST
