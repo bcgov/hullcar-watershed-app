@@ -190,6 +190,16 @@ def drop_duplicate_columns(new_ems_records, drop_cols, date_columns):
     
     return new_ems_records
 
+def calc_monitoring_loc_name(new_ems_records, split_strings):
+    """ Calculates MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION """
+
+    short_name = new_ems_records['MONITORING_LOCATION'].apply(lambda x: x.split(' ')[0] if x in split_strings else x)
+
+    new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = short_name
+    logging.info("..calculated MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION")
+
+    return new_ems_records
+
 def convert_ems_to_geojson(ems_df, today):
     """ Converts the pandas dataframe to geodataframe then dictionary for upload to AGOL """
 
@@ -249,6 +259,7 @@ def upload_to_ago(ago_flayer, new_features):
 def main():
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     SORT_COLUMN = 'COLLECTION_END'
+    STRINGS_TO_SPLIT = ['MW19-1AR PIEZOMETER', 'MW19-2A PIEZOMETER', 'MW19-3A PIEZOMETER', 'MW-20-1B HULLCAR MW', 'MW-20-2B HULLCAR MW', 'MW-20-4A HULLCAR MW']
 
     logging.info("Connecting to AGOL")
     gis = connect_to_ago(URL, USERNAME, PASSWORD)
@@ -289,8 +300,11 @@ def main():
             logging.info("Dropping duplicate columns")
             new_ems_records = drop_duplicate_columns(new_ems_records, drop_cols=DROP_COLS, date_columns=EMS_DATE_COLUMNS)
 
+            logging.info("Creating Monitoring Location Short Name")
+            edited_records = calc_monitoring_loc_name(new_ems_records)
+
             logging.info("Converting EMS data to spatial format")
-            new_features_dict = convert_ems_to_geojson(new_ems_records, today=now)
+            new_features_dict = convert_ems_to_geojson(edited_records, today=now)
 
             logging.info("Adding new EMS data to AGOL feature layer")
             upload_to_ago(ago_flayer, new_features_dict)  
