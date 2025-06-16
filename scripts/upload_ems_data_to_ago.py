@@ -194,15 +194,14 @@ def drop_duplicate_columns(new_ems_records, drop_cols, date_columns):
 def calc_monitoring_loc_name(new_ems_records):
     """ Calculates MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION """
 
+    regex = r"DEEP C @ HULCAR RD D/S OF CULVERT"
+    new_ems_records['MONITORING_LOCATION'].replace(to_replace=regex, value="DEEP C @ HULLCAR RD D/S OF CULVERT", inplace=True, regex=True)
+    logging.info("..corrected MONITORING_LOCATION name from 'DEEP C @ HULCAR RD D/S OF CULVERT' to 'DEEP C @ HULLCAR RD D/S OF CULVERT'")
+
     short_name = new_ems_records['MONITORING_LOCATION'].apply(lambda x: x.split(' ')[0] if x.startswith("MW") else x)
 
     new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = short_name
     logging.info("..calculated MONITORING_LOCATION_SHORT_NAME from MONITORING_LOCATION")
-
-    if new_ems_records['MONITORING_LOCATION'] == "DEEP C @ HULCAR RD D/S OF CULVERT":
-        new_ems_records['MONITORING_LOCATION_SHORT_NAME'] = "DEEP C @ HULLCAR RD D/S OF CULVERT"
-        new_ems_records['MONITORING_LOCATION'] = "DEEP C @ HULLCAR RD D/S OF CULVERT"
-        logging.info("..corrected MONITORING_LOCATION name from 'DEEP C @ HULCAR RD D/S OF CULVERT' to 'DEEP C @ HULLCAR RD D/S OF CULVERT'")
 
     return new_ems_records
 
